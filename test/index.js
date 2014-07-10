@@ -8,9 +8,10 @@ var utq_sub_1 = new UTQ( 'test_queue', redis_client_sub_1 );
 var utq_sub_2 = new UTQ( 'test_queue', redis_client_sub_1 );
 
 describe('UniqueTaskQueue', function(){
-  var t1 = Date.now();
-  var t2 = Date.now() + 1000;
+  
   describe('#schedule(unique_task_id, date, data, cb)', function(){
+    var t1 = Date.now();
+    var t2 = Date.now() + 1000;
     it('it should schedule without error', function(done){
       utq_pub.schedule('task-once', t1, {exec_after:t1, num:1}, done);
     })
@@ -18,6 +19,7 @@ describe('UniqueTaskQueue', function(){
       utq_pub.schedule('task-once', t2, {exec_after:t2, num:2}, done);
     });
   })
+  
   describe('#createConsumer()', function(){
     it('it should consume the correct number of tasks, given acks, rescheduled-just-once, and multiple consumers', function(done){
       var task_cts = {
