@@ -1,3 +1,4 @@
+var assert = require('assert');
 var UTQ = require('../lib/UniqueTaskQueue');
 var redis_client_pub = require('redis').createClient();
 var redis_client_sub_1 = require('redis').createClient();
@@ -11,42 +12,49 @@ describe('UniqueTaskQueue', function(){
   var t2 = Date.now() + 1000;
   describe('#schedule(unique_task_id, date, data, cb)', function(){
     it('it should schedule without error', function(done){
-      utq_pub.schedule('task-1', t1, {val:1}, done);
+      utq_pub.schedule('task-once', t1, {exec_after:t1, num:1}, done);
     })
     it('it should reschedule without error', function(done){
-      var exec_time_2 = Date.now() + 1000;
-      utq_pub.schedule('task-1', t2, {val:2}, done);
+      utq_pub.schedule('task-once', t2, {exec_after:t2, num:2}, done);
     });
   })
   describe('#createConsumer()', function(){
-    var consumer_1 = utq_sub_1.createConsumer();
-    var consumer_2 = utq_sub_2.createConsumer();
-    var times_called = 0;
-    it('it should consume the task with updated data & timing', function(done){
-      var onTask = function(task_id, task_data, ack_fn){
-        if (task_id == 'task-1' && task_data.val==2 && Date.now() >= t2) {
-          times_called++;
-          ack_fn(true);
-          done();
-        } else {
-          done(new Error('task emitted with wrong data'));
-        }
+    it('it should consume the correct number of tasks, given acks, rescheduled-just-once, and multiple consumers', function(done){
+      var task_cts = {
+        'task-once':0,
+        'task-retry':0,
+        'task-other-1':0,
+        'task-other-2':0,
       };
-      consumer_1.on('task', onTask );
-      consumer_2.on('task', onTask );
-      consumer_1.start();
-      consumer_2.start();
-    })
-    it( 'it should consume the uniq item only once,' +
-        ' even with multiple consumers drawing from' +
-        ' the queue using different connections', function(done){
+      
+      utq_pub.schedule('task-retry',Date.now());
+      utq_pub.schedule('task-other-1',Date.now());
+      utq_pub.schedule('task-other-2',Date.now());
+      
+      utq_sub_1.createConsumer().on('task', onTask).start();
+      utq_sub_2.createConsumer().on('task', onTask).start();
+      
       setTimeout(function(){
-        if (times_called == 1) {
-          done();
+        assert.equal(task_cts['task-once'], 1, 'task-once should have been called once.')
+        assert.equal(task_cts['task-retry'], 2, 'task-retry should have been called twice.')
+        assert.equal(task_cts['task-other-1'], 1, 'task-other-1 should have been called once.')
+        assert.equal(task_cts['task-other-2'], 1, 'task-other-2 should have been called once.')
+        done();
+      },1500);
+      
+      function onTask (task_id, task_data, ack_fn) {
+        task_cts[task_id] += 1;
+        if ('task-once' == task_id) {
+          var should_ack = task_data.num == 2 && Date.now() >= task_data.exec_after ;
+          ack_fn(should_ack);
+        } else if ('task-retry' == task_id) {
+          var should_ack = task_cts['task-retry'] > 1; // do not ack the first time
+          ack_fn(should_ack);
         } else {
-          done(new Error('times_called is not 1.'))
+          ack_fn(true); // just ack others to ensure just-once delivery
         }
-      }, 1000);
+      }
+      
     });
-  })
+  });
 });
